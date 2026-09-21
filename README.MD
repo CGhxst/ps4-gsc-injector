@@ -7,7 +7,7 @@ Compile and inject GSC scripts for BO3 and BO4 on PS4.
 - Black Ops 3 1.26 and 1.33: compile and inject T7 PS4 `.gscc` scripts.
 - Black Ops 4 1.26: compile T8 projects and inject `.gscc` scripts through automatic Zombies, Multiplayer, and Frontend/Common hooks.
 
-The bundled GoldHEN ps4debug v1.1.19 payload supports PS4 system software 5.05, 6.72, 7.02, 7.50, 7.51, 7.55, 9.00, 9.03, 9.04, 9.50, 9.51, 9.60, 10.00, 10.01, 10.50, 10.70, 10.71, 11.00, 12.00, 12.01, and 12.02.
+The bundled GoldHEN ps4debug v1.1.19 payload supports PS4 system software 5.05, 5.07, 6.71, 6.72, 7.00, 7.01, 7.02, 7.50, 7.51, 7.55, 8.00, 8.01, 8.03, 8.50, 8.52, 9.00, 9.03, 9.04, 9.50, 9.51, 9.60, 10.00, 10.01, 10.50, 10.51, 10.70, 10.71, 11.00, 11.02, 11.50, 11.52, 12.00, and 12.02.
 
 ## Compile
 

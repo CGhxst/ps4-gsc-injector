@@ -60,6 +60,22 @@ namespace PS4GSCInjector.Tests
         }
 
         [TestMethod]
+        public void Bo4ScriptAllocation_AlignsToSixteenBytes()
+        {
+            Assert.AreEqual(0x1000UL, Bo4GameProfile.AlignUp(0x1000, 16));
+            Assert.AreEqual(0x1010UL, Bo4GameProfile.AlignUp(0x1001, 16));
+            Assert.AreEqual(0x1010UL, Bo4GameProfile.AlignUp(0x100F, 16));
+        }
+
+        [TestMethod]
+        public void Bo4ScriptAllocation_RejectsInvalidAlignment()
+        {
+            AssertThrows<ArgumentOutOfRangeException>(() => Bo4GameProfile.AlignUp(0x1000, 0));
+            AssertThrows<ArgumentOutOfRangeException>(() => Bo4GameProfile.AlignUp(0x1000, 3));
+            AssertThrows<OverflowException>(() => Bo4GameProfile.AlignUp(ulong.MaxValue, 16));
+        }
+
+        [TestMethod]
         public void MemoryScriptPointerLocator_FindsT8ScriptParseTreeEntries()
         {
             var surrogateHash = T8ScriptHash.Hash64(@"scripts\zm_common\load.gsc");
@@ -81,6 +97,25 @@ namespace PS4GSCInjector.Tests
             Assert.AreEqual(2, entries.Count);
             Assert.AreEqual(surrogateEntryAddress, entries[0].EntryAddress);
             Assert.AreEqual(targetEntryAddress, entries[1].EntryAddress);
+        }
+
+        private static void AssertThrows<TException>(Action action)
+            where TException : Exception
+        {
+            try
+            {
+                action();
+            }
+            catch (TException)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                Assert.Fail("Expected " + typeof(TException).Name + " but received " + exception.GetType().Name + ".");
+            }
+
+            Assert.Fail("Expected " + typeof(TException).Name + " but no exception was thrown.");
         }
     }
 }

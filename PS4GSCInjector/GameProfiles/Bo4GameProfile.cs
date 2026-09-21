@@ -10,6 +10,7 @@ namespace PS4GSCInjector.GameProfiles
     {
         private static readonly IReadOnlyList<string> Symbols = new[] { "BO4", "T8", "PS4", "__PS4", "_GSC" };
         private const ulong TargetCompilerScriptHash = 0x124CECFF7280BE52;
+        private const int ScriptMemoryAlignment = 16;
 
         private static readonly IReadOnlyList<GameVersionProfile> GameVersions = new[]
         {
@@ -70,7 +71,8 @@ namespace PS4GSCInjector.GameProfiles
                     ". Make sure the matching game mode is loaded far enough for that script to exist in memory.");
             }
 
-            ulong newScriptAddress = 0;
+            ulong allocationAddress = 0;
+            int allocationLength = 0;
             var pointerUpdated = false;
 
             try
@@ -79,7 +81,12 @@ namespace PS4GSCInjector.GameProfiles
 
                 ps4.ReadMemory(process.pid, targetEntry.BufferAddress + 0x8, 8).CopyTo(script, 0x8);
 
-                newScriptAddress = ps4.AllocateMemory(process.pid, script.Length);
+                allocationLength = checked(script.Length + ScriptMemoryAlignment - 1);
+                allocationAddress = ps4.AllocateMemory(process.pid, allocationLength);
+                if (allocationAddress == 0)
+                    throw new GscInjectionException("Failed to allocate memory for the BO4 script.");
+
+                ulong newScriptAddress = AlignUp(allocationAddress, ScriptMemoryAlignment);
                 ps4.WriteMemory(process.pid, newScriptAddress, script);
                 ps4.WriteMemory(process.pid, targetEntry.EntryAddress + 0x10, newScriptAddress);
                 pointerUpdated = true;
@@ -98,15 +105,15 @@ namespace PS4GSCInjector.GameProfiles
                     }
                 }
 
-                injectedScripts[allocationKey] = new InjectedScriptAllocation(newScriptAddress, script.Length, process.pid);
+                injectedScripts[allocationKey] = new InjectedScriptAllocation(allocationAddress, allocationLength, process.pid);
             }
             catch
             {
-                if (!pointerUpdated && newScriptAddress != 0)
+                if (!pointerUpdated && allocationAddress != 0)
                 {
                     try
                     {
-                        ps4.FreeMemory(process.pid, newScriptAddress, script.Length);
+                        ps4.FreeMemory(process.pid, allocationAddress, allocationLength);
                     }
                     catch
                     {
@@ -118,6 +125,15 @@ namespace PS4GSCInjector.GameProfiles
             }
         }
 
+        internal static ulong AlignUp(ulong address, int alignment)
+        {
+            if (alignment <= 0 || (alignment & (alignment - 1)) != 0)
+                throw new ArgumentOutOfRangeException(nameof(alignment), "Alignment must be a positive power of two.");
+
+            ulong mask = (ulong)(alignment - 1);
+            return checked((address + mask) & ~mask);
+        }
+
         private static void EnsureSurrogateIncludesTarget(
             libdebug.PS4DBG ps4,
             Process process,
@@ -126,12 +142,12 @@ namespace PS4GSCInjector.GameProfiles
             const int includeTableOffsetOffset = 0x18;
             const int includeCountOffset = 0x58;
 
-            byte includeCount = ps4.ReadMemory<byte>(process.pid, surrogateEntry.BufferAddress + includeCountOffset);
+            ushort includeCount = ps4.ReadMemory<ushort>(process.pid, surrogateEntry.BufferAddress + includeCountOffset);
             int includeTableOffset = ps4.ReadMemory<int>(process.pid, surrogateEntry.BufferAddress + includeTableOffsetOffset);
             if (includeTableOffset <= 0)
                 throw new GscInjectionException("BO4 hook include table is invalid.");
 
-            if (includeCount == byte.MaxValue)
+            if (includeCount == ushort.MaxValue)
                 throw new GscInjectionException("BO4 hook include table is full.");
 
             ulong includeTableAddress = surrogateEntry.BufferAddress + (ulong)includeTableOffset;
@@ -143,7 +159,7 @@ namespace PS4GSCInjector.GameProfiles
             }
 
             ps4.WriteMemory(process.pid, includeTableAddress + (ulong)(includeCount * sizeof(ulong)), TargetCompilerScriptHash);
-            ps4.WriteMemory(process.pid, surrogateEntry.BufferAddress + includeCountOffset, (byte)(includeCount + 1));
+            ps4.WriteMemory(process.pid, surrogateEntry.BufferAddress + includeCountOffset, (ushort)(includeCount + 1));
         }
     }
 }
