@@ -17,15 +17,10 @@ namespace PS4GSCInjector
                 dialog = (IFileOpenDialog)new FileOpenDialogCoClass();
                 dialog.SetOptions(Fos.PickFolders | Fos.ForceFileSystem | Fos.PathMustExist);
 
-                if (owner != null)
-                {
-                    var handle = new WindowInteropHelper(owner).EnsureHandle();
-                    dialog.Show(handle);
-                }
-                else
-                {
-                    dialog.Show(IntPtr.Zero);
-                }
+                IntPtr handle = owner == null ? IntPtr.Zero : new WindowInteropHelper(owner).EnsureHandle();
+                int result = dialog.Show(handle);
+                if (result == unchecked((int)0x800704C7)) return null;
+                Marshal.ThrowExceptionForHR(result);
 
                 dialog.GetResult(out resultItem);
                 resultItem.GetDisplayName(SigDn.FileSystemPath, out string path);

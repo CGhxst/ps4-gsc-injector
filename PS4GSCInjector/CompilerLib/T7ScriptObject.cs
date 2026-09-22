@@ -255,7 +255,7 @@ namespace T7CompilerLib
             if (input == null || input == "")
                 return 0;
 
-            input = input.ToLower();
+            input = input.ToLowerInvariant();
 
             //if input starts with func_, var_, or hash_, use the provided hash (if possible)
             foreach (string hashprefix in HashIdentifierPrefixes)
@@ -283,7 +283,7 @@ namespace T7CompilerLib
             uint hash = IV;
 
             foreach (char c in Input)
-                hash = (char.ToLower(c) ^ hash) * XORKEY;
+                hash = (char.ToLowerInvariant(c) ^ hash) * XORKEY;
 
             hash = hash * XORKEY;
 
@@ -407,7 +407,7 @@ namespace T7CompilerLib
 #if DEBUG
                 Console.WriteLine($"Platform is missing opcode: {indexer.ToString()}");
 #endif
-                return 0xFFFF; //invalid
+                throw new NotSupportedException("The PS4 T7 VM does not support opcode " + indexer + ".");
             }
         }
 
@@ -442,7 +442,7 @@ namespace T7CompilerLib
             uint hash = iv;
 
             foreach (char c in input)
-                hash = (char.ToLower(c) ^ hash) * key;
+                hash = (char.ToLowerInvariant(c) ^ hash) * key;
 
             hash = hash * key;
 

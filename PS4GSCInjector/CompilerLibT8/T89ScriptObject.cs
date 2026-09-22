@@ -121,7 +121,7 @@ namespace T89CompilerLib
         public void Deserialize(byte[] data)
         {
             RawData = data;
-            T89ScriptHeader.ReadHeader(ref data, ref __header__, 0u, this);
+            T89ScriptHeader.ReadHeader(ref data, ref __header__, this);
             T89ImportSection.ReadImports(ref data, Header.ImportTableOffset, Header.ImportsCount, ref __imports__, this);
             T89StringTableSection.ReadStrings(ref data, Header.StringTableOffset, Header.StringCount, ref __strings__, this);
             T89IncludesSection.ReadIncludes(ref data, Header.IncludeTableOffset, Header.IncludeCount, ref __includes__, this);
@@ -158,7 +158,7 @@ namespace T89CompilerLib
             if (input == null)
                 return 0;
 
-            input = input.ToLower();
+            input = input.ToLowerInvariant();
 
             if(input.Length < 1) return (uint)Unk0Hash(input);
 
@@ -181,7 +181,7 @@ namespace T89CompilerLib
 
         public ulong T8s64Hash(string input)
         {
-            input = input.ToLower();
+            input = input.ToLowerInvariant();
             if (input.Length < 1) return 0x7FFFFFFFFFFFFFFF & HashFNV1a(Encoding.ASCII.GetBytes(input));
 
             //if input starts with func_, var_, or hash_, use the provided hash (if possible)
@@ -202,7 +202,7 @@ namespace T89CompilerLib
         private static ulong Unk0Hash(string input)
         {
             uint hash = 0x4B9ACE2F;
-            input = input.ToLower();
+            input = input.ToLowerInvariant();
 
             foreach (char c in input)
                 hash = ((c + hash) ^ ((c + hash) << 10)) + (((c + hash) ^ ((c + hash) << 10)) >> 6);
@@ -386,7 +386,7 @@ namespace T89CompilerLib
                     return val;
 
                 Console.WriteLine($"Platform is missing opcode: {indexer.ToString()}");
-                return 0xFFFF; //invalid
+                throw new NotSupportedException("The T8 VM does not support opcode " + indexer + ".");
             }
         }
 

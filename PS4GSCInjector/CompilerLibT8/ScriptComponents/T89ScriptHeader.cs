@@ -60,53 +60,57 @@ namespace T89CompilerLib.ScriptComponents
         public ushort UNK_5A { get; internal set; } //0x5A, 0x5C
         public uint UNK_5C { get; internal set; } //0x5C, 0x60
 
-        private void Deserialize(ref byte[] data, ulong ExpectedMagic)
+        private void Deserialize(ref byte[] data)
         {
             if (data.Length < HEADER_SIZE)
                 throw new ArgumentException("Provided GSC file is not a valid T89 script; data is too short");
 
-            BinaryReader reader = new BinaryReader(new MemoryStream(data)); //TODO: if an invalid magic is passed, this resource will leak.
+            BinaryReader reader = new BinaryReader(new MemoryStream(data));
+            try
+            {
+                ulong Magic = reader.ReadUInt64();
 
-            ulong Magic = reader.ReadUInt64();
+                if (Magic != ScriptMagic)
+                    throw new ArgumentException("Provided GSC file is not a valid T89 script; invalid magic");
 
-            if (Magic != ScriptMagic)
-                throw new ArgumentException("Provided GSC file is not a valid T89 script; invalid magic");
+                SourceChecksum = reader.ReadUInt32();
+                UNK_0C = reader.ReadUInt32();
 
-            SourceChecksum = reader.ReadUInt32();
-            UNK_0C = reader.ReadUInt32();
+                //0x10
+                ScriptName = reader.ReadUInt64();
+                IncludeTableOffset = reader.ReadUInt32();
+                StringCount = reader.ReadUInt16();
+                ExportsCount = reader.ReadUInt16(); // 0x1E
 
-            //0x10
-            ScriptName = reader.ReadUInt64();
-            IncludeTableOffset = reader.ReadUInt32();
-            StringCount = reader.ReadUInt16();
-            ExportsCount = reader.ReadUInt16(); // 0x1E
+                UNK_20 = reader.ReadUInt32();
+                StringTableOffset = reader.ReadUInt32();
+                ImportsCount = reader.ReadUInt16();
+                FixupCount = reader.ReadUInt16();
+                UNK_2C = reader.ReadUInt32();
 
-            UNK_20 = reader.ReadUInt32();
-            StringTableOffset = reader.ReadUInt32();
-            ImportsCount = reader.ReadUInt16();
-            FixupCount = reader.ReadUInt16();
-            UNK_2C = reader.ReadUInt32();
+                // 0x30
+                ExportTableOffset = reader.ReadUInt32();
+                if (Script.VM == VM_36) UNK_34 = reader.ReadUInt32(); // 0x34 / 0x30
+                ImportTableOffset = reader.ReadUInt32(); // 0x38 / 0x34
+                GlobalObjectCount = reader.ReadUInt16(); // 0x3C / 0x38
+                UNK_3E = reader.ReadUInt16(); // 0x3E / 0x3A
 
-            // 0x30
-            ExportTableOffset = reader.ReadUInt32();
-            if (Script.VM == VM_36) UNK_34 = reader.ReadUInt32(); // 0x34 / 0x30
-            ImportTableOffset = reader.ReadUInt32(); // 0x38 / 0x34
-            GlobalObjectCount = reader.ReadUInt16(); // 0x3C / 0x38
-            UNK_3E = reader.ReadUInt16(); // 0x3E / 0x3A
+                UNK_40 = reader.ReadUInt32(); // 0x40 / 0x3C
+                GlobalObjectTable = reader.ReadUInt32(); // 0x44 / 0x40
+                UNK_48 = reader.ReadUInt32();
 
-            UNK_40 = reader.ReadUInt32(); // 0x40 / 0x3C
-            GlobalObjectTable = reader.ReadUInt32(); // 0x44 / 0x40
-            UNK_48 = reader.ReadUInt32();
+                if (Script.VM == VM_36) UNK_4C = reader.ReadUInt32();
 
-            if (Script.VM == VM_36) UNK_4C = reader.ReadUInt32();
-
-            UNK_50 = reader.ReadUInt32();
-            UNK_54 = reader.ReadUInt32();
-            IncludeCount = reader.ReadUInt16();
-            UNK_5A = reader.ReadUInt16();
-            UNK_5C = reader.ReadUInt32();
-
-            reader.Dispose();
+                UNK_50 = reader.ReadUInt32();
+                UNK_54 = reader.ReadUInt32();
+                IncludeCount = reader.ReadUInt16();
+                UNK_5A = reader.ReadUInt16();
+                UNK_5C = reader.ReadUInt32();
+            }
+            finally
+            {
+                reader.Dispose();
+            }
         }
 
         public override byte[] Serialize()
@@ -135,10 +139,10 @@ namespace T89CompilerLib.ScriptComponents
         /// </summary>
         /// <param name="data"></param>
         /// <param name="outputRef"></param>
-        public static void ReadHeader(ref byte[] data, ref T89ScriptHeader outputRef, ulong ExpectedMagic, T89ScriptObject script)
+        public static void ReadHeader(ref byte[] data, ref T89ScriptHeader outputRef, T89ScriptObject script)
         {
             outputRef = new T89ScriptHeader(script);
-            outputRef.Deserialize(ref data, ExpectedMagic);
+            outputRef.Deserialize(ref data);
         }
 
         public void CommitHeader(ref byte[] raw, ulong magic)
@@ -171,8 +175,8 @@ namespace T89CompilerLib.ScriptComponents
             writer.Write(raw.Length); //unsupported
             if (Script.VM == VM_36) writer.Write(raw.Length); //unsupported
 
-            writer.Write(raw.Length); //0x50
-            writer.Write(raw.Length); //unsupported
+            writer.Write(UNK_50); //0x50: unknown word and dev-string count.
+            writer.Write(UNK_54); //0x54: bytecode length.
             writer.Write(IncludeCount);
             writer.Write((ushort)0);
             writer.Write((int)0);

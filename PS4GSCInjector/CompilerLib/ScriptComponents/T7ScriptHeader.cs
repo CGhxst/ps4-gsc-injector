@@ -49,44 +49,47 @@ namespace T7CompilerLib.ScriptComponents
 
         private void Deserialize(ref byte[] data, ulong ExpectedMagic)
         {
-
             if (data.Length < HEADER_SIZE)
                 throw new ArgumentException("Provided GSC file is not a valid T7 script; data is too short");
 
-            EndianReader reader = new EndianReader(new MemoryStream(data), Endianess); //TODO: if an invalid magic is passed, this resource will leak.
+            EndianReader reader = new EndianReader(new MemoryStream(data), Endianess);
+            try
+            {
+                ulong Magic = reader.ReadUInt64();
 
-            ulong Magic = reader.ReadUInt64();
+                if (Magic != ExpectedMagic)
+                    throw new ArgumentException("Provided GSC file is not a valid T7 script; invalid magic");
 
-            if (Magic != ExpectedMagic)
-                throw new ArgumentException("Provided GSC file is not a valid T7 script; invalid magic");
+                SourceChecksum = reader.ReadUInt32();
+                IncludeTableOffset = reader.ReadUInt32();
 
-            SourceChecksum = reader.ReadUInt32();
-            IncludeTableOffset = reader.ReadUInt32();
+                AnimTreeTableOffset = reader.ReadUInt32();
+                ByteCodeOffset = reader.ReadUInt32();
+                StringTableOffset = reader.ReadUInt32();
+                DebugStringTableOffset = reader.ReadUInt32();
 
-            AnimTreeTableOffset = reader.ReadUInt32();
-            ByteCodeOffset = reader.ReadUInt32();
-            StringTableOffset = reader.ReadUInt32();
-            DebugStringTableOffset = reader.ReadUInt32();
+                ExportTableOffset = reader.ReadUInt32();
+                ImportTableOffset = reader.ReadUInt32();
+                FixupTableOffset = reader.ReadUInt32();
+                ProfileTableOffset = reader.ReadUInt32();
 
-            ExportTableOffset = reader.ReadUInt32();
-            ImportTableOffset = reader.ReadUInt32();
-            FixupTableOffset = reader.ReadUInt32();
-            ProfileTableOffset = reader.ReadUInt32();
+                ByteCodeSize = reader.ReadUInt32();
+                NameOffset = (Endianess == EndianType.LittleEndian) ? reader.ReadUInt32() : reader.ReadUInt16(); //alignment fix for xbox
+                StringCount = reader.ReadUInt16();
+                ExportsCount = reader.ReadUInt16();
+                ImportsCount = reader.ReadUInt16();
+                FixupCount = reader.ReadUInt16();
 
-            ByteCodeSize = reader.ReadUInt32();
-            NameOffset = (Endianess == EndianType.LittleEndian) ? reader.ReadUInt32() : reader.ReadUInt16(); //alignment fix for xbox
-            StringCount = reader.ReadUInt16();
-            ExportsCount = reader.ReadUInt16();
-            ImportsCount = reader.ReadUInt16();
-            FixupCount = reader.ReadUInt16();
-
-            ProfileCount = reader.ReadUInt16();
-            DebugStringCount = reader.ReadUInt16();
-            IncludeCount = reader.ReadByte();
-            AnimTreeCount = reader.ReadByte();
-            Flags = reader.ReadByte();
-
-            reader.Dispose();
+                ProfileCount = reader.ReadUInt16();
+                DebugStringCount = reader.ReadUInt16();
+                IncludeCount = reader.ReadByte();
+                AnimTreeCount = reader.ReadByte();
+                Flags = reader.ReadByte();
+            }
+            finally
+            {
+                reader.Dispose();
+            }
         }
 
         public int LowestSectionPtrAfter(int offset)

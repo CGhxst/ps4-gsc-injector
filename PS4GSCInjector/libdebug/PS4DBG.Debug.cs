@@ -255,9 +255,7 @@ namespace libdebug
             SendCMDPacket(CMDS.CMD_DEBUG_THREADS, 0);
             CheckStatus();
 
-            byte[] data = new byte[sizeof(int)];
-            sock.Receive(data, sizeof(int), SocketFlags.None);
-            int number = BitConverter.ToInt32(data, 0);
+            int number = ReceiveCount();
 
             byte[] threads = ReceiveData(number * sizeof(uint));
             uint[] thrlist = new uint[number];

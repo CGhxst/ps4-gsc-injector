@@ -51,9 +51,14 @@ namespace PS4GSCInjector.GameProfiles
             libdebug.PS4DBG ps4,
             Process process,
             GameVersionProfile version,
-            byte[] script,
-            IDictionary<string, InjectedScriptAllocation> injectedScripts)
+            byte[] script)
         {
+            if (ps4 == null) throw new ArgumentNullException(nameof(ps4));
+            if (process == null) throw new ArgumentNullException(nameof(process));
+            if (version == null) throw new ArgumentNullException(nameof(version));
+            if (!IsValidCompiledScript(script))
+                throw new GscInjectionException("The selected script is not a valid T8 script.");
+
             if (string.IsNullOrWhiteSpace(version.ScriptHookPath))
                 throw new GscInjectionException("Black Ops 4 needs a script hook before it can inject.");
 
@@ -71,57 +76,17 @@ namespace PS4GSCInjector.GameProfiles
                     ". Make sure the matching game mode is loaded far enough for that script to exist in memory.");
             }
 
-            ulong allocationAddress = 0;
-            int allocationLength = 0;
-            var pointerUpdated = false;
+            byte[] patchedScript = (byte[])script.Clone();
+            ps4.ReadMemory(process.pid, targetEntry.BufferAddress + 0x8, sizeof(uint)).CopyTo(patchedScript, 0x8);
+            BitConverter.GetBytes(TargetCompilerScriptHash).CopyTo(patchedScript, 0x10);
 
-            try
+            using (var transaction = new RemoteScriptTransaction(ps4, process.pid))
             {
-                EnsureSurrogateIncludesTarget(ps4, process, surrogateEntry);
-
-                ps4.ReadMemory(process.pid, targetEntry.BufferAddress + 0x8, 8).CopyTo(script, 0x8);
-
-                allocationLength = checked(script.Length + ScriptMemoryAlignment - 1);
-                allocationAddress = ps4.AllocateMemory(process.pid, allocationLength);
-                if (allocationAddress == 0)
-                    throw new GscInjectionException("Failed to allocate memory for the BO4 script.");
-
-                ulong newScriptAddress = AlignUp(allocationAddress, ScriptMemoryAlignment);
-                ps4.WriteMemory(process.pid, newScriptAddress, script);
-                ps4.WriteMemory(process.pid, targetEntry.EntryAddress + 0x10, newScriptAddress);
-                pointerUpdated = true;
-
-                var allocationKey = Id + ":" + version.Id + ":" + TargetCompilerScriptHash.ToString("X");
-                if (injectedScripts.TryGetValue(allocationKey, out var previousAllocation) &&
-                    previousAllocation.ProcessId == process.pid)
-                {
-                    try
-                    {
-                        ps4.FreeMemory(process.pid, previousAllocation.Address, previousAllocation.Length);
-                    }
-                    catch
-                    {
-                        // The new script is already active; failure to free the old allocation is non-fatal.
-                    }
-                }
-
-                injectedScripts[allocationKey] = new InjectedScriptAllocation(allocationAddress, allocationLength, process.pid);
-            }
-            catch
-            {
-                if (!pointerUpdated && allocationAddress != 0)
-                {
-                    try
-                    {
-                        ps4.FreeMemory(process.pid, allocationAddress, allocationLength);
-                    }
-                    catch
-                    {
-                        // Preserve the original injection error.
-                    }
-                }
-
-                throw;
+                ulong address = transaction.Allocate(patchedScript, ScriptMemoryAlignment);
+                EnsureSurrogateIncludesTarget(ps4, process, surrogateEntry, transaction);
+                transaction.Patch(targetEntry.EntryAddress + 0x18, BitConverter.GetBytes(patchedScript.Length));
+                transaction.Patch(targetEntry.EntryAddress + 0x10, BitConverter.GetBytes(address));
+                transaction.Commit();
             }
         }
 
@@ -135,31 +100,46 @@ namespace PS4GSCInjector.GameProfiles
         }
 
         private static void EnsureSurrogateIncludesTarget(
-            libdebug.PS4DBG ps4,
-            Process process,
-            MemoryScriptPointerLocator.T8ScriptParseTreeEntry surrogateEntry)
+            PS4DBG ps4, Process process,
+            MemoryScriptPointerLocator.T8ScriptParseTreeEntry entry,
+            RemoteScriptTransaction transaction)
         {
-            const int includeTableOffsetOffset = 0x18;
-            const int includeCountOffset = 0x58;
+            byte[] script = ps4.ReadMemory(process.pid, entry.BufferAddress, entry.Size);
+            int appendOffset = GetIncludeAppendOffset(script, TargetCompilerScriptHash);
+            if (appendOffset < 0) return;
+            transaction.Patch(entry.BufferAddress + (ulong)appendOffset, BitConverter.GetBytes(TargetCompilerScriptHash));
+            ushort count = BitConverter.ToUInt16(script, 0x58);
+            transaction.Patch(entry.BufferAddress + 0x58, BitConverter.GetBytes(checked((ushort)(count + 1))));
+        }
 
-            ushort includeCount = ps4.ReadMemory<ushort>(process.pid, surrogateEntry.BufferAddress + includeCountOffset);
-            int includeTableOffset = ps4.ReadMemory<int>(process.pid, surrogateEntry.BufferAddress + includeTableOffsetOffset);
-            if (includeTableOffset <= 0)
-                throw new GscInjectionException("BO4 hook include table is invalid.");
+        internal static int GetIncludeAppendOffset(byte[] script, ulong targetHash)
+        {
+            if (!TreyarchCompiledScriptValidator.IsValid(script, CompiledScriptFormat.T8, true))
+                throw new GscInjectionException("The BO4 hook has an invalid script layout.");
+            uint offset = BitConverter.ToUInt32(script, 0x18);
+            ushort count = BitConverter.ToUInt16(script, 0x58);
+            if (offset < 0x60 || (ulong)offset + (ulong)count * 8 > (ulong)script.Length)
+                throw new GscInjectionException("The BO4 hook include table is outside the script.");
+            for (int i = 0; i < count; i++)
+                if (BitConverter.ToUInt64(script, checked((int)offset + i * 8)) == targetHash)
+                    return -1;
+            if (count == ushort.MaxValue)
+                throw new GscInjectionException("The BO4 hook include table is full.");
 
-            if (includeCount == ushort.MaxValue)
-                throw new GscInjectionException("BO4 hook include table is full.");
-
-            ulong includeTableAddress = surrogateEntry.BufferAddress + (ulong)includeTableOffset;
-
-            for (var index = 0; index < includeCount; index++)
+            ulong end = (ulong)offset + (ulong)count * 8;
+            ulong limit = (ulong)script.Length;
+            // All section starts that can bound the include table in VM 0x36.
+            foreach (int field in new[] { 0x20, 0x24, 0x2C, 0x30, 0x38, 0x40, 0x44, 0x4C })
             {
-                if (ps4.ReadMemory<ulong>(process.pid, includeTableAddress + (ulong)(index * sizeof(ulong))) == TargetCompilerScriptHash)
-                    return;
+                uint next = BitConverter.ToUInt32(script, field);
+                if (next >= end && next >= 0x60 && next < limit) limit = next;
             }
-
-            ps4.WriteMemory(process.pid, includeTableAddress + (ulong)(includeCount * sizeof(ulong)), TargetCompilerScriptHash);
-            ps4.WriteMemory(process.pid, surrogateEntry.BufferAddress + includeCountOffset, (ushort)(includeCount + 1));
+            if (offset < 0x60 || end + 8 > limit)
+                throw new GscInjectionException("The BO4 hook has no room for another include. Injection was cancelled.");
+            for (int i = 0; i < 8; i++)
+                if (script[(int)end + i] != 0)
+                    throw new GscInjectionException("The BO4 include padding is occupied. Injection was cancelled.");
+            return (int)end;
         }
     }
 }

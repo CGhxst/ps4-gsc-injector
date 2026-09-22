@@ -32,7 +32,7 @@ namespace T7CompilerLib.ScriptComponents
 
         public override ushort Count()
         {
-            return (ushort)TableEntries.Keys.Count;
+            return checked((ushort)TableEntries.Keys.Count);
         }
 
         public IEnumerable<uint> LoadOffsets()

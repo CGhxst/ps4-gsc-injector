@@ -9,7 +9,7 @@ namespace TreyarchCompiler.Utilities
         {
             using (var sm = new MemoryStream())
             {
-                using (var compressor = new ZlibStream(sm, CompressionMode.Compress, CompressionLevel.BestCompression))
+                using (var compressor = new ZlibStream(sm, CompressionMode.Compress, CompressionLevel.BestCompression, true))
                 {
                     compressor.Write(header, 0, header.Length);
                     compressor.Flush();

@@ -39,62 +39,33 @@ namespace PS4GSCInjector.GameProfiles
             PS4DBG ps4,
             libdebug.Process process,
             GameVersionProfile version,
-            byte[] script,
-            IDictionary<string, InjectedScriptAllocation> injectedScripts)
+            byte[] script)
         {
-            var targetScriptAddress = ResolveTargetScriptAddress(ps4, process, version, script);
+            if (ps4 == null) throw new ArgumentNullException(nameof(ps4));
+            if (process == null) throw new ArgumentNullException(nameof(process));
+            if (version == null) throw new ArgumentNullException(nameof(version));
+            if (!IsValidCompiledScript(script))
+                throw new GscInjectionException("The selected script is invalid for this game.");
+
+            ulong targetScriptAddress = ResolveTargetScriptAddress(ps4, process, version, script);
             if (targetScriptAddress == 0)
                 throw new GscInjectionException("This target could not resolve a script hook in memory.");
 
-            ulong newScriptAddress = 0;
-            var pointerUpdated = false;
+            ulong pointerAddress = checked(targetScriptAddress + (ulong)Offsets.ScriptPointerOffset);
+            ulong originalAddress = ps4.ReadMemory<ulong>(process.pid, pointerAddress);
+            if (originalAddress == 0 ||
+                !TreyarchCompiledScriptValidator.IsValid(
+                    ps4.ReadMemory(process.pid, originalAddress, 0x50), CompiledScriptFormat.T7, true))
+                throw new GscInjectionException("The BO3 hook does not contain a T7 script. Check the game version and loaded mode.");
 
-            try
+            byte[] patchedScript = (byte[])script.Clone();
+            ps4.ReadMemory(process.pid, originalAddress + (ulong)Offsets.ChecksumReadOffset, sizeof(uint))
+                .CopyTo(patchedScript, Offsets.ChecksumWriteOffset);
+            using (var transaction = new RemoteScriptTransaction(ps4, process.pid))
             {
-                var filePointerAddress = ps4.ReadMemory<ulong>(process.pid, targetScriptAddress + (ulong)Offsets.ScriptPointerOffset);
-
-                if (filePointerAddress == 0)
-                    throw new GscInjectionException("Failed to locate target script pointer in game memory. Ensure you are in a map or loaded game state.");
-
-                int checksum = ps4.ReadMemory<int>(process.pid, filePointerAddress + (ulong)Offsets.ChecksumReadOffset);
-                BitConverter.GetBytes(checksum).CopyTo(script, Offsets.ChecksumWriteOffset);
-
-                newScriptAddress = ps4.AllocateMemory(process.pid, script.Length);
-                ps4.WriteMemory(process.pid, newScriptAddress, script);
-                ps4.WriteMemory(process.pid, targetScriptAddress + (ulong)Offsets.ScriptPointerOffset, newScriptAddress);
-                pointerUpdated = true;
-
-                var allocationKey = Id + ":" + version.Id + ":" + targetScriptAddress.ToString("X");
-                if (injectedScripts.TryGetValue(allocationKey, out var previousAllocation) &&
-                    previousAllocation.ProcessId == process.pid)
-                {
-                    try
-                    {
-                        ps4.FreeMemory(process.pid, previousAllocation.Address, previousAllocation.Length);
-                    }
-                    catch
-                    {
-                        // The new script is already active; failure to free the old allocation is non-fatal.
-                    }
-                }
-
-                injectedScripts[allocationKey] = new InjectedScriptAllocation(newScriptAddress, script.Length, process.pid);
-            }
-            catch
-            {
-                if (!pointerUpdated && newScriptAddress != 0)
-                {
-                    try
-                    {
-                        ps4.FreeMemory(process.pid, newScriptAddress, script.Length);
-                    }
-                    catch
-                    {
-                        // Preserve the original injection error.
-                    }
-                }
-
-                throw;
+                ulong address = transaction.Allocate(patchedScript);
+                transaction.Patch(pointerAddress, BitConverter.GetBytes(address));
+                transaction.Commit();
             }
         }
 

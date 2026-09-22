@@ -174,15 +174,15 @@ namespace libdebug
         public static object GetObjectFromBytes(byte[] buffer, Type type)
         {
             int size = Marshal.SizeOf(type);
-
+            if (buffer == null || buffer.Length < size)
+                throw new ArgumentException("The buffer is shorter than the requested structure.", nameof(buffer));
             IntPtr ptr = Marshal.AllocHGlobal(size);
-
-            Marshal.Copy(buffer, 0, ptr, size);
-            object r = Marshal.PtrToStructure(ptr, type);
-
-            Marshal.FreeHGlobal(ptr);
-
-            return r;
+            try
+            {
+                Marshal.Copy(buffer, 0, ptr, size);
+                return Marshal.PtrToStructure(ptr, type);
+            }
+            finally { Marshal.FreeHGlobal(ptr); }
         }
 
         public static byte[] GetBytesFromObject(object obj)
@@ -192,12 +192,13 @@ namespace libdebug
             byte[] bytes = new byte[size];
             IntPtr ptr = Marshal.AllocHGlobal(size);
 
-            Marshal.StructureToPtr(obj, ptr, false);
-            Marshal.Copy(ptr, bytes, 0, size);
-
-            Marshal.FreeHGlobal(ptr);
-
-            return bytes;
+            try
+            {
+                Marshal.StructureToPtr(obj, ptr, false);
+                Marshal.Copy(ptr, bytes, 0, size);
+                return bytes;
+            }
+            finally { Marshal.FreeHGlobal(ptr); }
         }
 
         // General networking functions
@@ -279,67 +280,67 @@ namespace libdebug
             }
         }
 
+        internal static void SendExact(Socket socket, byte[] data, int length)
+        {
+            if (data == null) throw new ArgumentNullException(nameof(data));
+            if (length < 0 || length > data.Length) throw new ArgumentOutOfRangeException(nameof(length));
+            int offset = 0;
+            while (offset < length)
+            {
+                int sent = socket.Send(data, offset, Math.Min(NET_MAX_LENGTH, length - offset), SocketFlags.None);
+                if (sent == 0) throw new EndOfStreamException("The console closed the connection while sending data.");
+                offset += sent;
+            }
+        }
+
+        internal static byte[] ReceiveExact(Socket socket, int length)
+        {
+            if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
+            byte[] data = new byte[length];
+            int offset = 0;
+            while (offset < length)
+            {
+                int received = socket.Receive(data, offset, Math.Min(NET_MAX_LENGTH, length - offset), SocketFlags.None);
+                if (received == 0) throw new EndOfStreamException("The console closed the connection while receiving data.");
+                offset += received;
+            }
+            return data;
+        }
+
         private void SendData(byte[] data, int length)
         {
-            int left = length;
-            int offset = 0;
-            int sent = 0;
-
-            while (left > 0)
-            {
-                if (left > NET_MAX_LENGTH)
-                {
-                    byte[] bytes = SubArray(data, offset, NET_MAX_LENGTH);
-                    sent = sock.Send(bytes, NET_MAX_LENGTH, SocketFlags.None);
-                }
-                else
-                {
-                    byte[] bytes = SubArray(data, offset, left);
-                    sent = sock.Send(bytes, left, SocketFlags.None);
-                }
-
-                offset += sent;
-                left -= sent;
-            }
+            try { SendExact(sock, data, length); }
+            catch (SocketException) { AbortConnection(); throw; }
+            catch (IOException) { AbortConnection(); throw; }
         }
 
         private byte[] ReceiveData(int length)
         {
-            MemoryStream s = new MemoryStream();
+            try { return ReceiveExact(sock, length); }
+            catch (SocketException) { AbortConnection(); throw; }
+            catch (IOException) { AbortConnection(); throw; }
+        }
 
-            int left = length;
-            int recv = 0;
-            while (left > 0)
-            {
-				if (left > NET_MAX_LENGTH)
-				{
-					byte[] b = new byte[NET_MAX_LENGTH];
-					recv = sock.Receive(b, NET_MAX_LENGTH, SocketFlags.None);
-					s.Write(b, 0, recv);
-				}
-				else
-				{
-					byte[] b = new byte[left];
-					recv = sock.Receive(b, left, SocketFlags.None);
-					s.Write(b, 0, recv);
-				}
-
-				left -= recv;
-			}
-
-            byte[] data = s.ToArray();
-
-            s.Dispose();
-            GC.Collect();
-
-            return data;
+        private void AbortConnection()
+        {
+            IsConnected = false;
+            sock.Close();
         }
 
         private CMD_STATUS ReceiveStatus()
         {
-            byte[] status = new byte[4];
-            sock.Receive(status, 4, SocketFlags.None);
-            return (CMD_STATUS)BitConverter.ToUInt32(status, 0);
+            return (CMD_STATUS)BitConverter.ToUInt32(ReceiveData(sizeof(uint)), 0);
+        }
+
+        private int ReceiveCount()
+        {
+            int count = BitConverter.ToInt32(ReceiveData(sizeof(int)), 0);
+            if (count < 0 || count > 65536)
+            {
+                AbortConnection();
+                throw new InvalidDataException("The console returned an invalid record count.");
+            }
+            return count;
         }
 
         private void CheckStatus()
@@ -365,9 +366,11 @@ namespace libdebug
         /// Initializes PS4DBG class
         /// </summary>
         /// <param name="addr">PlayStation 4 address</param>
-        public PS4DBG(IPAddress addr)
+        public PS4DBG(IPAddress addr) : this(new IPEndPoint(addr, PS4DBG_PORT)) { }
+
+        internal PS4DBG(IPEndPoint endpoint)
         {
-            enp = new IPEndPoint(addr, PS4DBG_PORT);
+            enp = endpoint;
             sock = new Socket(enp.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
         }
 
@@ -375,21 +378,7 @@ namespace libdebug
         /// Initializes PS4DBG class
         /// </summary>
         /// <param name="ip">PlayStation 4 ip address</param>
-        public PS4DBG(string ip)
-        {
-            IPAddress addr = null;
-            try
-            {
-                addr = IPAddress.Parse(ip);
-            }
-            catch (FormatException ex)
-            {
-                throw ex;
-            }
-
-            enp = new IPEndPoint(addr, PS4DBG_PORT);
-            sock = new Socket(enp.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-        }
+        public PS4DBG(string ip) : this(IPAddress.Parse(ip)) { }
 
         /// <summary>
         /// Find the playstation ip
@@ -434,6 +423,7 @@ namespace libdebug
                 sock.SendBufferSize = NET_MAX_LENGTH;
 
                 sock.ReceiveTimeout = 1000 * 10;
+                sock.SendTimeout = 1000 * 10;
 				sock.Connect(enp);
 
                 IsConnected = true;
@@ -488,13 +478,13 @@ namespace libdebug
 
             SendCMDPacket(CMDS.CMD_VERSION, 0);
 
-            byte[] ldata = new byte[4];
-            sock.Receive(ldata, 4, SocketFlags.None);
-
-            int length = BitConverter.ToInt32(ldata, 0);
-
-            byte[] data = new byte[length];
-            sock.Receive(data, length, SocketFlags.None);
+            int length = BitConverter.ToInt32(ReceiveData(sizeof(int)), 0);
+            if (length <= 0 || length > 4096)
+            {
+                AbortConnection();
+                throw new InvalidDataException("The console returned an invalid version length.");
+            }
+            byte[] data = ReceiveData(length);
 
             return ConvertASCII(data, 0);
         }

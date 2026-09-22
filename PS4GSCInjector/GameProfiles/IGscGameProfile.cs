@@ -32,7 +32,6 @@ namespace PS4GSCInjector.GameProfiles
             PS4DBG ps4,
             libdebug.Process process,
             GameVersionProfile version,
-            byte[] script,
-            IDictionary<string, InjectedScriptAllocation> injectedScripts);
+            byte[] script);
     }
 }

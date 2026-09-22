@@ -57,7 +57,10 @@ namespace T7CompilerLib.OpCodes
             uint JumpTo = After.CommitAddress + After.GetSize();
             uint JumpFrom = CommitAddress + GetSize();
 
-            ((short)(JumpTo - JumpFrom)).GetBytes(Endianess).CopyTo(data, GetCommitDataAddress());
+            long distance = (long)JumpTo - JumpFrom;
+            if (distance < short.MinValue || distance > short.MaxValue)
+                throw new InvalidOperationException("A branch exceeds the VM's signed 16-bit jump range. Split this function into smaller functions.");
+            ((short)distance).GetBytes(Endianess).CopyTo(data, GetCommitDataAddress());
         }
 
         public override uint GetCommitDataAddress()

@@ -49,7 +49,7 @@ namespace T7CompilerLib.ScriptComponents
         /// <returns></returns>
         public override ushort Count()
         {
-            return (ushort)Includes.Count;
+            return checked((ushort)Includes.Count);
         }
 
         /// <summary>
@@ -128,7 +128,7 @@ namespace T7CompilerLib.ScriptComponents
 
         public override void UpdateHeader(ref T7ScriptHeader Header)
         {
-            Header.IncludeCount = (byte)Count();
+            Header.IncludeCount = checked((byte)Count());
             Header.IncludeTableOffset = GetBaseAddress();
         }
     }

@@ -46,7 +46,7 @@ namespace T89CompilerLib.ScriptComponents
         /// <returns></returns>
         public override ushort Count()
         {
-            return (ushort)Includes.Count;
+            return checked((ushort)Includes.Count);
         }
 
         /// <summary>
@@ -81,7 +81,7 @@ namespace T89CompilerLib.ScriptComponents
             BinaryReader reader = new BinaryReader(new MemoryStream(data));
             reader.BaseStream.Position = IncludesPosition;
 
-            for(byte i = 0; i < NumIncludes; i++)
+            for(int i = 0; i < NumIncludes; i++)
             {
                 includes.Includes.Add(reader.ReadUInt64());
             }
@@ -105,7 +105,7 @@ namespace T89CompilerLib.ScriptComponents
 
         public override void UpdateHeader(ref T89ScriptHeader Header)
         {
-            Header.IncludeCount = (byte)Count();
+            Header.IncludeCount = Count();
             Header.IncludeTableOffset = GetBaseAddress();
         }
     }

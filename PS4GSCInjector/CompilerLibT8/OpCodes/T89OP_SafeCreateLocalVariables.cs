@@ -92,6 +92,8 @@ namespace T89CompilerLib.OpCodes
             if (Stack.ContainsKey(VarHash))
                 return (byte)(Stack.Count - Stack[VarHash] - 1);
 
+            if (Stack.Count >= byte.MaxValue)
+                throw new InvalidOperationException("A function cannot contain more than 255 local variables.");
             Stack[VarHash] = (byte)Stack.Count;
 
             return (byte)(Stack.Count - Stack[VarHash] - 1);

@@ -28,7 +28,7 @@ namespace T7CompilerLib.ScriptComponents
 
         public override ushort Count()
         {
-            return (ushort)TableEntries.Keys.Count;
+            return checked((ushort)TableEntries.Keys.Count);
         }
 
         public IEnumerable<uint> LoadOffsets()
@@ -170,7 +170,7 @@ namespace T7CompilerLib.ScriptComponents
 
         public byte NumEntryEmissions()
         {
-            return (byte)Math.Ceiling(References.Count / (float)250);
+            return checked((byte)Math.Ceiling(References.Count / (float)250));
         }
 
         public uint[] CollectReferences()

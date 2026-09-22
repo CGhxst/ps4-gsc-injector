@@ -72,15 +72,15 @@ namespace TreyarchCompiler.Games
             var functionTree = new Dictionary<string, ParseTreeNode>();
             SetNamespace();
             foreach (var directive in _tree.Root.ChildNodes[0].ChildNodes[0].
-                ChildNodes.OrderBy(x => x.ChildNodes[0].Term.Name.ToLower() == "functions"))
+                ChildNodes.OrderBy(x => x.ChildNodes[0].Term.Name.ToLowerInvariant() == "functions"))
             {
                 byte flags = GetPrivateByVM();
                 var FunctionFrame = directive;
-                switch (directive.ChildNodes[0].Term.Name.ToLower())
+                switch (directive.ChildNodes[0].Term.Name.ToLowerInvariant())
                 {
                     case "includes":
                         var node = directive.ChildNodes[0];
-                        var str = node.ChildNodes[0].Token.ValueString.ToLower().Replace("\\", "/");
+                        var str = node.ChildNodes[0].Token.ValueString.ToLowerInvariant().Replace("\\", "/");
                         if (!str.StartsWith("script_"))
                         {
                             if (node.ChildNodes[1].FindToken() is null)
@@ -89,14 +89,14 @@ namespace TreyarchCompiler.Games
                             }
                             else
                             {
-                                str += node.ChildNodes[1].FindToken().ValueString.ToLower();
+                                str += node.ChildNodes[1].FindToken().ValueString.ToLowerInvariant();
                             }
                         }
                         Script.Includes.Add(Script.T8s64Hash(str));
                         break;
 
                     case "globals":
-                        Macros[directive.ChildNodes[0].ChildNodes[0].FindTokenAndGetText().ToLower()] = directive.ChildNodes[0].ChildNodes[2];
+                        Macros[directive.ChildNodes[0].ChildNodes[0].FindTokenAndGetText().ToLowerInvariant()] = directive.ChildNodes[0].ChildNodes[2];
                         break;
 
                     case "functionframe":
@@ -107,7 +107,7 @@ namespace TreyarchCompiler.Games
                     case "functions":
                     functionsLabel:
                         var function = FunctionFrame.ChildNodes[FunctionFrame.ChildNodes.Count - 1];
-                        var functionName = function.ChildNodes[function.ChildNodes.FindIndex(e => e.Term.Name == "identifier")].Token.ValueString.ToLower();
+                        var functionName = function.ChildNodes[function.ChildNodes.FindIndex(e => e.Term.Name == "identifier")].Token.ValueString.ToLowerInvariant();
                         var Parameters = function.ChildNodes[function.ChildNodes.FindIndex(e => e.Term.Name == "parameters")].ChildNodes[0].ChildNodes;
                         if (FunctionMetadata.ContainsKey(functionName)) throw new ArgumentException($"Function '{functionName}' has been defined more than once.");
                         functionTree.Add(functionName, function);
@@ -117,14 +117,14 @@ namespace TreyarchCompiler.Games
                             NamespaceHash = ScriptNamespace,
                             FunctionName = functionName,
                             NamespaceName = "treyarch",
-                            NumParams = (byte)Parameters.Count,
+                            NumParams = checked((byte)Parameters.Count),
                             Flags = flags
                         };
                         break;
 
                     case "functiondetour":
                         var detour = directive.ChildNodes[0];
-                        var local_detour_target = "detour_" + Guid.NewGuid().ToString().ToLower();
+                        var local_detour_target = "detour_" + Guid.NewGuid().ToString().ToLowerInvariant();
                         var detour_parameters = detour.ChildNodes[detour.ChildNodes.FindIndex(e => e.Term.Name == "parameters")].ChildNodes[0].ChildNodes;
                         functionTree.Add(local_detour_target, detour);
                         FunctionMetadata[local_detour_target] = new ScriptFunctionMetaData()
@@ -133,25 +133,25 @@ namespace TreyarchCompiler.Games
                             NamespaceHash = ScriptNamespace,
                             FunctionName = local_detour_target,
                             NamespaceName = "ilcustom",
-                            NumParams = (byte)detour_parameters.Count,
+                            NumParams = checked((byte)detour_parameters.Count),
                             Flags = 0, // detours are not private
                             IsDetour = true
                         };
 
                         var detourPathIndex = detour.ChildNodes.FindIndex(e => e.Term.Name == "detourPath");
-                        string detourFunc = detour.ChildNodes[detourPathIndex + 1].Token.ValueString.ToLower();
+                        string detourFunc = detour.ChildNodes[detourPathIndex + 1].Token.ValueString.ToLowerInvariant();
                         string detourNamespace = "";
                         string detourScript = null;
                         if (detour.ChildNodes[detourPathIndex].ChildNodes[0].Term.Name == "gscForFunction")
                         {
-                            detourNamespace = detour.ChildNodes[detourPathIndex].ChildNodes[0].ChildNodes[0].Token.ValueString.ToLower();
+                            detourNamespace = detour.ChildNodes[detourPathIndex].ChildNodes[0].ChildNodes[0].Token.ValueString.ToLowerInvariant();
                         }
                         else
                         {
-                            detourNamespace = detour.ChildNodes[detourPathIndex].ChildNodes[0].Token.ValueString.ToLower();
-                            detourScript = detour.ChildNodes[detourPathIndex].ChildNodes[2].Token.ValueString.ToLower();
+                            detourNamespace = detour.ChildNodes[detourPathIndex].ChildNodes[0].Token.ValueString.ToLowerInvariant();
+                            detourScript = detour.ChildNodes[detourPathIndex].ChildNodes[2].Token.ValueString.ToLowerInvariant();
 
-                            string exten = detour.ChildNodes[detourPathIndex].ChildNodes[3].Token.ValueString.ToLower();
+                            string exten = detour.ChildNodes[detourPathIndex].ChildNodes[3].Token.ValueString.ToLowerInvariant();
                             if(exten.Contains("."))
                             {
                                 detourScript += exten;
@@ -175,7 +175,7 @@ namespace TreyarchCompiler.Games
         private void SetNamespace()
         {
             if (_tree.Root.ChildNodes[0].ChildNodes.Count <= 0) return;
-            var directive = _tree.Root.ChildNodes[0].ChildNodes[0].ChildNodes.Find(x => x.ChildNodes[0].Term.Name.ToLower() == "namespace");
+            var directive = _tree.Root.ChildNodes[0].ChildNodes[0].ChildNodes.Find(x => x.ChildNodes[0].Term.Name.ToLowerInvariant() == "namespace");
             if (directive != null) ScriptNamespace = Script.T8Hash(directive.ChildNodes[0].ChildNodes[1].FindTokenAndGetText());
         }
 
@@ -243,32 +243,32 @@ namespace TreyarchCompiler.Games
                     switch (childNode.Term.Name)
                     {
                         case "identifier":
-                            if (AllowIDCollection) yield return childNode.FindTokenAndGetText().ToLower();
+                            if (AllowIDCollection) yield return childNode.FindTokenAndGetText().ToLowerInvariant();
                             break;
 
                         case "setVariableField":
                             if (childNode.ChildNodes[0].ChildNodes[0].Term.Name.Contains("identifier"))
-                                yield return childNode.FindTokenAndGetText().ToLower();
+                                yield return childNode.FindTokenAndGetText().ToLowerInvariant();
                             break;
 
                         case "foreachSingle":
                         case "foreachDouble":
-                            var array = Guid.NewGuid().ToString().ToLower(); //iterator
-                            var iterator = Guid.NewGuid().ToString().ToLower(); //iterator
-                            var key = Guid.NewGuid().ToString().ToLower(); //key
-                            var NextKey = Guid.NewGuid().ToString().ToLower(); //NextKey
+                            var array = Guid.NewGuid().ToString().ToLowerInvariant(); //iterator
+                            var iterator = Guid.NewGuid().ToString().ToLowerInvariant(); //iterator
+                            var key = Guid.NewGuid().ToString().ToLowerInvariant(); //key
+                            var NextKey = Guid.NewGuid().ToString().ToLowerInvariant(); //NextKey
                             CurrentFunction.PushFEKeys(array, iterator, key, NextKey);
                             yield return array;
                             yield return iterator;
                             yield return key;
                             yield return NextKey;
                             if (childNode.Term.Name == "foreachDouble")
-                                yield return childNode.ChildNodes[childNode.ChildNodes.FindIndex(e => e.Term.Name.ToLower() == "key")].FindTokenAndGetText().ToLower();
-                            yield return childNode.ChildNodes[childNode.ChildNodes.FindIndex(e => e.Term.Name.ToLower() == "value")].FindTokenAndGetText().ToLower();
+                                yield return childNode.ChildNodes[childNode.ChildNodes.FindIndex(e => e.Term.Name.ToLowerInvariant() == "key")].FindTokenAndGetText().ToLowerInvariant();
+                            yield return childNode.ChildNodes[childNode.ChildNodes.FindIndex(e => e.Term.Name.ToLowerInvariant() == "value")].FindTokenAndGetText().ToLowerInvariant();
                             break;
 
                         case "switchStatement":
-                            key = Guid.NewGuid().ToString().ToLower();
+                            key = Guid.NewGuid().ToString().ToLowerInvariant();
                             CurrentFunction.PushSwitchKey(key);
                             yield return key;
                             break;
@@ -285,7 +285,7 @@ namespace TreyarchCompiler.Games
             {
                 if (node.ChildNodes[0].Term.Name != "setOptionalParam") continue;
                 var optional = node.ChildNodes[0];
-                string pname = optional.ChildNodes[0].FindTokenAndGetText().ToLower();
+                string pname = optional.ChildNodes[0].FindTokenAndGetText().ToLowerInvariant();
                 AddEvalLocalDefined(CurrentFunction, pname);
                 var __jmp = CurrentFunction.AddJump(ScriptOpCode.JumpOnTrue);
                 Push(CurrentFunction, optional.ChildNodes[2], 0);
@@ -441,7 +441,7 @@ namespace TreyarchCompiler.Games
 
                     case "include_identifier":
                     case "identifier":
-                        string LocalToLower = node.Token.ValueString.ToLower();
+                        string LocalToLower = node.Token.ValueString.ToLowerInvariant();
                         if (Macros.TryGetValue(LocalToLower, out ParseTreeNode MacroNode)) Push(CurrentFunction, MacroNode, Context);
                         else AddEvalLocal(CurrentFunction, LocalToLower, HasContext(Context, ScriptContext.IsRef));
                         break;
@@ -619,7 +619,7 @@ namespace TreyarchCompiler.Games
             ParseTreeNode DefaultNode = null;
             foreach (var _node in SwitchContentsArray)
             {
-                if (_node.ChildNodes[0].ChildNodes[0].Term.Name.ToLower() == "default")
+                if (_node.ChildNodes[0].ChildNodes[0].Term.Name.ToLowerInvariant() == "default")
                 {
                     DefaultNode = _node;
                     break;
@@ -666,7 +666,7 @@ namespace TreyarchCompiler.Games
             ParseTreeNode BaseCall = CallFrame.ChildNodes[0];
             ParseTreeNode CallPrefix = callNode.ChildNodes.Count > 1 ? callNode.ChildNodes[0] : null;
             ParseTreeNode Caller = null;
-            string function_name = BaseCall.ChildNodes[BaseCall.ChildNodes.Count - 2].FindTokenAndGetText().ToLower();
+            string function_name = BaseCall.ChildNodes[BaseCall.ChildNodes.Count - 2].FindTokenAndGetText().ToLowerInvariant();
             string NS_String = null;
             uint fhash = Script.T8Hash(function_name);
             if (BaseCall.ChildNodes.Count == 3) NS_String = BaseCall.ChildNodes[0].FindTokenAndGetText();
@@ -706,7 +706,7 @@ namespace TreyarchCompiler.Games
                         {
                             yield return new QOperand(CurrentFunction, parameter, 0);
                         }
-                        result = CurrentFunction.TryAddBuiltInCall(BaseCall.ChildNodes[0].Token.ValueString.ToLower());
+                        result = CurrentFunction.TryAddBuiltInCall(BaseCall.ChildNodes[0].Token.ValueString.ToLowerInvariant());
                     }
                     if (result != null) yield break;
                     throw new NotImplementedException($"Call to builtin method '{BaseCall.ChildNodes[0].Token.ValueString}' has not been handled!");
@@ -741,7 +741,7 @@ namespace TreyarchCompiler.Games
             if (HasContext(Context, ScriptContext.IsPointer))
             {
                 yield return new QOperand(CurrentFunction, CallFrame.ChildNodes[0].ChildNodes[0], 0);
-                CurrentFunction.AddCallPtr(Context, (byte)paramCount);
+                CurrentFunction.AddCallPtr(Context, checked((byte)paramCount));
             }
             else
             {
@@ -771,7 +771,7 @@ namespace TreyarchCompiler.Games
                         Flags |= 2; //script function call
                     }
                 }
-                var import = Script.Imports.AddImport(fhash, t8_ns, (byte)paramCount, Flags);
+                var import = Script.Imports.AddImport(fhash, t8_ns, checked((byte)paramCount), Flags);
                 CurrentFunction.AddCall(import, Context);
             }
             if (HasContext(Context, ScriptContext.DecTop)) CurrentFunction.AddOp(ScriptOpCode.DecTop);
@@ -781,7 +781,7 @@ namespace TreyarchCompiler.Games
         {
             ParseTreeNode CallParameters = BaseCall.ChildNodes[1].ChildNodes[0];
             ParseTreeNodeList parameters = CallParameters.ChildNodes;
-            string strnotify = BaseCall.ChildNodes[0].Token.ValueString.ToLower();
+            string strnotify = BaseCall.ChildNodes[0].Token.ValueString.ToLowerInvariant();
             switch (strnotify)
             {
                 case "notify":
@@ -797,7 +797,7 @@ namespace TreyarchCompiler.Games
                     parameters.Reverse();
                     foreach (ParseTreeNode parameter in parameters) yield return new QOperand(CurrentFunction, parameter, 0);
                     foreach (var val in EmitObject(CurrentFunction, CallPrefix, 0)) yield return val;
-                    PushObject(CurrentFunction.AddNotification(strnotify, (byte)parameters.Count));
+                    PushObject(CurrentFunction.AddNotification(strnotify, checked((byte)parameters.Count)));
                     yield break;
                 case "waittill_timeout_s":
                 case "waittilltimeout":
@@ -806,11 +806,11 @@ namespace TreyarchCompiler.Games
                     parameters.Reverse();
                     foreach (ParseTreeNode parameter in parameters) yield return new QOperand(CurrentFunction, parameter, 0);
                     foreach (var val in EmitObject(CurrentFunction, CallPrefix, 0)) yield return val;
-                    PushObject(CurrentFunction.AddNotification(strnotify, (byte)parameters.Count));
+                    PushObject(CurrentFunction.AddNotification(strnotify, checked((byte)parameters.Count)));
                     if(HasDectop) CurrentFunction.AddOp(ScriptOpCode.DecTop);
                     yield break;
             }
-            throw new ArgumentException($"{BaseCall.ChildNodes[0].Token.ValueString.ToLower()} was passed to EmitNotifierCall, but isnt a valid notifier");
+            throw new ArgumentException($"{BaseCall.ChildNodes[0].Token.ValueString.ToLowerInvariant()} was passed to EmitNotifierCall, but isnt a valid notifier");
         }
 
         private IEnumerable<QOperand> EmitObject(T89ScriptExport CurrentFunction, ParseTreeNode node, uint Context)
@@ -909,7 +909,7 @@ namespace TreyarchCompiler.Games
             if (NSNode != null) t8_ns = Script.T8Hash(NSNode.FindTokenAndGetText());
             byte Flags = (byte)ImportFlags.IsRef;
             if(t8_ns == ScriptNamespace) Flags |= (byte)ImportFlags.NeedsResolver;
-            string fname = FuncNameNode.ChildNodes[0].FindTokenAndGetText().ToLower();
+            string fname = FuncNameNode.ChildNodes[0].FindTokenAndGetText().ToLowerInvariant();
             uint FunctionID = Script.T8Hash(fname);
             CurrentFunction.AddFunctionPtr(Script.Imports.AddImport(FunctionID, t8_ns, Numparams, Flags));
         }
@@ -954,8 +954,8 @@ namespace TreyarchCompiler.Games
         {
             if(!CurrentFunction.TryPopFEKeys(out string[] keys, 4)) throw new InvalidOperationException("Tried to compile more foreach statements than were expected");
             int KeyIndex = node.ChildNodes.FindIndex(e => e.Term.Name == "key");
-            string _Key = KeyIndex != -1 ? node.ChildNodes[KeyIndex].FindTokenAndGetText().ToLower() : keys[2];
-            string _Value = node.ChildNodes[node.ChildNodes.FindIndex(e => e.Term.Name == "value")].FindTokenAndGetText().ToLower();
+            string _Key = KeyIndex != -1 ? node.ChildNodes[KeyIndex].FindTokenAndGetText().ToLowerInvariant() : keys[2];
+            string _Value = node.ChildNodes[node.ChildNodes.FindIndex(e => e.Term.Name == "value")].FindTokenAndGetText().ToLowerInvariant();
             var _Array = keys[0];
             var _Iterator = keys[1];
             var _NextArrayKey = keys[3];

@@ -23,7 +23,7 @@ namespace T89CompilerLib.ScriptComponents
 
         public override ushort Count()
         {
-            return (ushort)ObjectTable.Count;
+            return checked((ushort)ObjectTable.Count);
         }
 
         public override byte[] Serialize()

@@ -20,7 +20,7 @@
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
             <StackPanel DockPanel.Dock="Left">
                 <TextBlock Text="PS4 GSC Injector" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Text="Compile and inject GSC scripts for BO3 and BO4 on PS4."
+                <TextBlock Text="Compile and inject GSC scripts for supported PS4 games."
                            Foreground="{StaticResource MutedTextBrush}"
                            Margin="0,4,0,0"/>
             </StackPanel>

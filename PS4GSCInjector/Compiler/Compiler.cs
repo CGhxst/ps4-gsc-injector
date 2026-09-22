@@ -5,14 +5,18 @@ namespace TreyarchCompiler
 {
     public class Compiler
     {
+        private static readonly object CompileLock = new object();
+
         public static CompiledCode Compile(string code, string path = "")
         {
-            return new GSCCompiler(code, path)?.Compile();
+            lock (CompileLock)
+                return new GSCCompiler(code, path).Compile();
         }
 
         public static CompiledCode CompileT8(string code)
         {
-            return new T89Compiler(code)?.Compile();
+            lock (CompileLock)
+                return new T89Compiler(code).Compile();
         }
     }
 }

@@ -27,12 +27,12 @@ namespace T89CompilerLib.ScriptComponents
 
         public override ushort Count()
         {
-            ushort count = 0;
+            int count = 0;
             foreach(var entry in TableEntries)
             {
-                count += (ushort)(entry.Value.References.Count / 255 + 1);
+                count += (entry.Value.References.Count + 254) / 255;
             }
-            return count;
+            return checked((ushort)count);
         }
 
         public override byte[] Serialize()
@@ -45,7 +45,7 @@ namespace T89CompilerLib.ScriptComponents
 
             foreach (string s in TableEntries.Keys)
             {
-                CurrentString += ((uint)TableEntries[s].References.Count * 4) + (uint)(8 * (TableEntries[s].References.Count / 255 + 1));
+                CurrentString += ((uint)TableEntries[s].References.Count * 4) + (uint)(8 * ((TableEntries[s].References.Count + 254) / 255));
             }
 
             foreach (string s in TableEntries.Keys)
@@ -85,7 +85,7 @@ namespace T89CompilerLib.ScriptComponents
             uint count = 0;
             foreach(string s in TableEntries.Keys)
             {
-                count += (uint)s.Length + 1 + (uint)(8 * (TableEntries[s].References.Count / 255 + 1)) + 2; //null terminated + header + prefix
+                count += (uint)s.Length + 1 + (uint)(8 * ((TableEntries[s].References.Count + 254) / 255));
                 count += (uint)TableEntries[s].References.Count * 4; //uint * count
             }
 

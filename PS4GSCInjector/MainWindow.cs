@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using libdebug;
@@ -22,9 +23,9 @@ namespace PS4GSCInjector
 
         private PS4DBG ps4;
         private Ps4Process attachedProcess;
+        private string attachedIp;
         private GameTargetOption selectedTarget;
-        private readonly Dictionary<string, InjectedScriptAllocation> injectedScripts =
-            new Dictionary<string, InjectedScriptAllocation>();
+        private bool operationInProgress;
 
         public MainWindow()
         {
@@ -47,6 +48,11 @@ namespace PS4GSCInjector
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            if (operationInProgress)
+            {
+                e.Cancel = true;
+                return;
+            }
             DisconnectDebugger();
         }
 
@@ -96,10 +102,12 @@ namespace PS4GSCInjector
             }
 
             var previousProfileId = selectedTarget?.Profile.Id;
+            var previousProcessName = selectedTarget == null ? null : GetProcessName(selectedTarget);
             selectedTarget = new GameTargetOption(profile, version);
 
             if (previousProfileId != null &&
-                !string.Equals(previousProfileId, selectedTarget.Profile.Id, StringComparison.OrdinalIgnoreCase) &&
+                (!string.Equals(previousProfileId, selectedTarget.Profile.Id, StringComparison.OrdinalIgnoreCase) ||
+                 !string.Equals(previousProcessName, GetProcessName(selectedTarget), StringComparison.OrdinalIgnoreCase)) &&
                 (ps4 != null || attachedProcess != null))
             {
                 DisconnectDebugger();
@@ -135,6 +143,14 @@ namespace PS4GSCInjector
                 return;
             }
 
+            if (string.Equals(selectedTarget.Profile.Id, "bo2", StringComparison.OrdinalIgnoreCase))
+            {
+                TargetHelpTextBlock.Text = "Automatic T6 script lookup for " + selectedTarget.Version.DisplayName + ".";
+                CompilerHelpTextBlock.Text = selectedTarget.Profile.CompilerUnavailableMessage;
+                InjectorHelpTextBlock.Text = "Load " + selectedTarget.Version.DisplayName + ", attach, then inject a PS4-compatible compiled T6 script.";
+                return;
+            }
+
             TargetHelpTextBlock.Text = "T7 compiler and direct script injection for " + selectedTarget.Version.DisplayName + ".";
             CompilerHelpTextBlock.Text = "Compile a Black Ops 3 GSC project into a T7 .gscc script.";
             InjectorHelpTextBlock.Text = "Attach in-game, then inject a compiled T7 script.";
@@ -157,7 +173,7 @@ namespace PS4GSCInjector
             var debugger = ps4;
             ps4 = null;
             attachedProcess = null;
-            injectedScripts.Clear();
+            attachedIp = null;
 
             if (debugger == null)
             {
@@ -281,7 +297,7 @@ namespace PS4GSCInjector
                 {
                     foreach (Ps4Process process in procList.processes)
                     {
-                        if (process.name == selectedTarget.Profile.ProcessName)
+                        if (process.name == GetProcessName(selectedTarget))
                         {
                             proc = process;
                             break;
@@ -301,11 +317,12 @@ namespace PS4GSCInjector
             {
                 DisconnectDebugger();
                 SetConnectionStatus("Game not found", DangerBrush);
-                ShowError(selectedTarget.Profile.ProcessName + " process not found on PS4. Make sure " + selectedTarget.Profile.DisplayName + " is running.", "Process Not Found");
+                ShowError(GetProcessName(selectedTarget) + " process not found on PS4. Make sure " + selectedTarget.Version.DisplayName + " is running.", "Process Not Found");
                 return;
             }
 
             attachedProcess = proc;
+            attachedIp = currentIp;
             SetConnectionStatus("Attached", SuccessBrush);
 
             try
@@ -340,7 +357,7 @@ namespace PS4GSCInjector
             }
         }
 
-        private void CompileGscProjectButton_Click(object sender, RoutedEventArgs e)
+        private async void CompileGscProjectButton_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(GscProjectFolderTextBox.Text) || string.IsNullOrWhiteSpace(CompiledGscFileOutputTextBox.Text))
             {
@@ -366,12 +383,17 @@ namespace PS4GSCInjector
                 return;
             }
 
-            var conditionalSymbols = LoadConditionalSymbols(GscProjectFolderTextBox.Text);
+            List<string> conditionalSymbols;
             string source;
             var sourceTokens = new List<SourceTokenDef>();
-
-            if (!TryReadProjectSource(GscProjectFolderTextBox.Text, sourceTokens, out source))
+            try
             {
+                conditionalSymbols = LoadConditionalSymbols(GscProjectFolderTextBox.Text);
+                if (!TryReadProjectSource(GscProjectFolderTextBox.Text, sourceTokens, out source)) return;
+            }
+            catch (Exception ex)
+            {
+                ShowError("Could not read the GSC project:" + Environment.NewLine + ex.Message, "Project Read Error");
                 return;
             }
 
@@ -396,19 +418,31 @@ namespace PS4GSCInjector
             }
 
             CompiledCode code;
+            operationInProgress = true;
+            IsEnabled = false;
             try
             {
-                code = selectedTarget.Profile.Compile(source);
+                code = await Task.Run(() => selectedTarget.Profile.Compile(source));
             }
             catch (Exception ex)
             {
                 ShowError("Unhandled compiler error: " + ex.Message, "Compiler Error");
                 return;
             }
-
-            if (!string.IsNullOrEmpty(code.Error))
+            finally
             {
-                ShowError("There was an error compiling your GSC Project:" + Environment.NewLine + code.Error, "Compiler Error");
+                operationInProgress = false;
+                IsEnabled = true;
+            }
+
+            if (code == null || !string.IsNullOrEmpty(code.Error))
+            {
+                ShowError("There was an error compiling your GSC Project:" + Environment.NewLine + code?.Error, "Compiler Error");
+                return;
+            }
+            if (!selectedTarget.Profile.IsValidCompiledScript(code.CompiledScript))
+            {
+                ShowError("The compiler produced an invalid script layout. No output was written.", "Compiler Error");
                 return;
             }
 
@@ -442,7 +476,7 @@ namespace PS4GSCInjector
 
             foreach (string line in File.ReadAllLines(configFileToRead))
             {
-                if (line.Trim().StartsWith("#"))
+                if (line.Trim().StartsWith("#", StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -506,6 +540,8 @@ namespace PS4GSCInjector
                 currentSource.CharEnd = currentCharCount;
                 sourceTokens.Add(currentSource);
                 sb.Append("\n");
+                currentLineCount++;
+                currentCharCount++;
             }
 
             source = sb.ToString();
@@ -515,17 +551,15 @@ namespace PS4GSCInjector
         private void ShowPreprocessorError(CBSyntaxException error, List<SourceTokenDef> sourceTokens)
         {
             int errorCharPos = error.ErrorPosition;
-            int numLineBreaks = 0;
 
             foreach (var sourceToken in sourceTokens)
             {
-                if (errorCharPos >= sourceToken.CharStart && errorCharPos <= sourceToken.CharEnd)
+                if (errorCharPos >= sourceToken.CharStart && errorCharPos < sourceToken.CharEnd)
                 {
-                    errorCharPos -= numLineBreaks;
                     foreach (var line in sourceToken.LineMappings)
                     {
                         var constraints = line.Value;
-                        if (errorCharPos >= constraints.CStart && errorCharPos <= constraints.CEnd)
+                        if (errorCharPos >= constraints.CStart && errorCharPos < constraints.CEnd)
                         {
                             ShowError("There was an error compiling your GSC Project:" + Environment.NewLine +
                                       error.Message + " in scripts/" + sourceToken.FilePath +
@@ -537,7 +571,6 @@ namespace PS4GSCInjector
                     }
                 }
 
-                numLineBreaks++;
             }
 
             ShowError("Preprocessor Syntax Error: " + error.Message, "Compiler Error");
@@ -545,9 +578,12 @@ namespace PS4GSCInjector
 
         private void BrowseCompiledGscFileButton_Click(object sender, RoutedEventArgs e)
         {
+            bool isBo2 = string.Equals(selectedTarget?.Profile.Id, "bo2", StringComparison.OrdinalIgnoreCase);
             var dialog = new OpenFileDialog
             {
-                Filter = "Compiled GSC Files (*.gscc)|*.gscc"
+                Filter = isBo2
+                    ? "Compiled T6 GSC Files (*.gsc;*.gscc)|*.gsc;*.gscc|All Files (*.*)|*.*"
+                    : "Compiled GSC Files (*.gscc)|*.gscc|All Files (*.*)|*.*"
             };
 
             if (dialog.ShowDialog(this) == true)
@@ -556,9 +592,10 @@ namespace PS4GSCInjector
             }
         }
 
-        private void InjectGscButton_Click(object sender, RoutedEventArgs e)
+        private async void InjectGscButton_Click(object sender, RoutedEventArgs e)
         {
-            if (ps4 == null || !ps4.IsConnected || attachedProcess == null)
+            if (ps4 == null || !ps4.IsConnected || attachedProcess == null ||
+                !string.Equals(attachedIp, Ps4IpTextBox.Text.Trim(), StringComparison.Ordinal))
             {
                 var targetName = selectedTarget?.Profile.DisplayName ?? "a supported game";
                 ShowError("Make sure to connect to your PS4 and attach to " + targetName + " first.", "Not Connected");
@@ -567,7 +604,7 @@ namespace PS4GSCInjector
 
             if (string.IsNullOrWhiteSpace(CompiledGscFileTextBox.Text))
             {
-                ShowError("Please select a compiled GSC file to inject (.gscc).", "Select GSCC File");
+                ShowError("Please select a compiled GSC file to inject.", "Select Compiled GSC");
                 return;
             }
 
@@ -588,23 +625,32 @@ namespace PS4GSCInjector
                 return;
             }
 
+            operationInProgress = true;
+            IsEnabled = false;
             try
             {
-                selectedTarget.Profile.InjectCompiledScript(ps4, attachedProcess, selectedTarget.Version, buffer, injectedScripts);
-
-                try
+                await Task.Run(() =>
                 {
-                    ps4.Notify(222, "GSC Script injected!");
-                }
-                catch
-                {
-                }
+                    selectedTarget.Profile.InjectCompiledScript(ps4, attachedProcess, selectedTarget.Version, buffer);
+                    try { ps4.Notify(222, "GSC Script injected!"); }
+                    catch { /* The injection succeeded even if the notification failed. */ }
+                });
 
                 MessageBox.Show(this, "GSC script successfully injected into " + selectedTarget.Profile.DisplayName + " process.", "Injection Success", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
+                if (!ps4.IsConnected)
+                {
+                    DisconnectDebugger();
+                    SetConnectionStatus("Disconnected", DangerBrush);
+                }
                 ShowError("Memory injection failed:" + Environment.NewLine + ex.Message, "Injection Error");
+            }
+            finally
+            {
+                operationInProgress = false;
+                IsEnabled = true;
             }
         }
 
@@ -616,6 +662,13 @@ namespace PS4GSCInjector
         private void GameVersionComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             UpdateSelectedTarget();
+        }
+
+        private static string GetProcessName(GameTargetOption target)
+        {
+            return string.IsNullOrWhiteSpace(target.Version.ProcessName)
+                ? target.Profile.ProcessName
+                : target.Version.ProcessName;
         }
 
         private bool AskYesNo(string message, string title)

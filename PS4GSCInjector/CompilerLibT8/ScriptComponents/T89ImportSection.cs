@@ -11,24 +11,24 @@ namespace T89CompilerLib.ScriptComponents
         private T89ImportSection(T89ScriptObject script)
         {
             Script = script;
-            Imports = new Dictionary<ulong, T89Import>();
+            Imports = new Dictionary<(uint Function, uint Namespace, byte Parameters, byte Flags), T89Import>();
             LoadedOffsetPairs = new Dictionary<uint, T89Import>();
         } //Prevent public initializers
 
         internal static T89ImportSection New(T89ScriptObject script)
         {
             T89ImportSection imports = new T89ImportSection(script);
-            imports.Imports = new Dictionary<ulong, T89Import>();
+            imports.Imports = new Dictionary<(uint Function, uint Namespace, byte Parameters, byte Flags), T89Import>();
             imports.LoadedOffsetPairs = new Dictionary<uint, T89Import>();
             return imports;
         }
 
-        public Dictionary<ulong, T89Import> Imports;
+        public Dictionary<(uint Function, uint Namespace, byte Parameters, byte Flags), T89Import> Imports;
         public Dictionary<uint, T89Import> LoadedOffsetPairs;
 
         public override ushort Count()
         {
-            return (ushort)Imports.Count;
+            return checked((ushort)Imports.Count);
         }
 
         public IEnumerable<T89Import> AllImports()
@@ -48,13 +48,13 @@ namespace T89CompilerLib.ScriptComponents
 
             BinaryWriter writer = new BinaryWriter(new MemoryStream(data));
 
-            foreach(ulong key in Imports.Keys)
+            foreach (var key in Imports.Keys)
             {
                 var import = Imports[key];
 
                 writer.Write(import.Function);
                 writer.Write(import.Namespace);
-                writer.Write((ushort)import.References.Count);
+                writer.Write(checked((ushort)import.References.Count));
                 writer.Write(import.NumParams);
                 writer.Write(import.Flags);
 
@@ -73,7 +73,7 @@ namespace T89CompilerLib.ScriptComponents
         {
             uint count = 0;
 
-            foreach(ulong key in Imports.Keys)
+            foreach (var key in Imports.Keys)
             {
                 count += 12 + (uint)(Imports[key].References.Count * 4);
             }
@@ -94,7 +94,7 @@ namespace T89CompilerLib.ScriptComponents
             import.Function = function;
             import.Namespace = ns;
             import.NumParams = paramcount;
-            import.Flags = Flags; //todo: they really fucked this shit up
+            import.Flags = Flags;
 
             Imports[GetUnique(function, ns, paramcount, Flags)] = import;
 
@@ -108,13 +108,12 @@ namespace T89CompilerLib.ScriptComponents
             return null;
         }
 
-        public static ulong GetUnique(uint function, uint ns, byte paramcount,  byte Flags)
+        public static (uint Function, uint Namespace, byte Parameters, byte Flags) GetUnique(uint function, uint ns, byte paramcount,  byte Flags)
         {
-            //very, very small collision chance. may be impossible but i haven't checked all loaded gsc namespaces.
-            return (ulong)((Flags << 8) | paramcount) ^ ((ulong)function << 32 | ns);
+            return (function, ns, paramcount, Flags);
         }
 
-        public static ulong GetUnique(T89Import import)
+        public static (uint Function, uint Namespace, byte Parameters, byte Flags) GetUnique(T89Import import)
         {
             return GetUnique(import.Function, import.Namespace, import.NumParams, import.Flags);
         }

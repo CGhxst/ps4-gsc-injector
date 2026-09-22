@@ -52,11 +52,13 @@ namespace T7CompilerLib.OpCodes
             switch (ScriptOpMetadata.OpInfo[(int)Code].OperandType)
             {
                 case ScriptOperandType.Int32:
-                    try { uint.Parse(Value.ToString()).GetBytes(Endianess).CopyTo(data, DataAddress); }
-                    catch { int.Parse(Value.ToString()).GetBytes(Endianess).CopyTo(data, DataAddress); }
+                    long integer = Convert.ToInt64(Value, System.Globalization.CultureInfo.InvariantCulture);
+                    if (integer < int.MinValue || integer > uint.MaxValue)
+                        throw new OverflowException("Integer literal is outside the VM's 32-bit range.");
+                    unchecked((uint)integer).GetBytes(Endianess).CopyTo(data, DataAddress);
                     break;
                 case ScriptOperandType.Float:
-                    float.Parse(Value.ToString()).GetBytes(Endianess).CopyTo(data, DataAddress);
+                    Convert.ToSingle(Value, System.Globalization.CultureInfo.InvariantCulture).GetBytes(Endianess).CopyTo(data, DataAddress);
                     break;
                 default:
                     if (Endianess == EndianType.BigEndian && ScriptOperandType.UInt8 == ScriptOpMetadata.OpInfo[(int)Code].OperandType)

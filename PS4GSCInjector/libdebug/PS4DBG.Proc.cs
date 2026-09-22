@@ -53,9 +53,7 @@ namespace libdebug
             CheckStatus();
 
             // recv count
-            byte[] bytes = new byte[4];
-            sock.Receive(bytes, 4, SocketFlags.None);
-            int number = BitConverter.ToInt32(bytes, 0);
+            int number = ReceiveCount();
 
             // recv data
             byte[] data = ReceiveData(number * PROC_LIST_ENTRY_SIZE);
@@ -82,6 +80,7 @@ namespace libdebug
         /// <returns></returns>
         public byte[] ReadMemory(int pid, ulong address, int length)
         {
+            if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
             CheckConnected();
 
             SendCMDPacket(CMDS.CMD_PROC_READ, CMD_PROC_READ_PACKET_SIZE, pid, address, length);
@@ -397,9 +396,7 @@ namespace libdebug
             CheckStatus();
 
             // recv count
-            byte[] bnumber = new byte[4];
-            sock.Receive(bnumber, 4, SocketFlags.None);
-            int number = BitConverter.ToInt32(bnumber, 0);
+            int number = ReceiveCount();
 
             // recv data
             byte[] data = ReceiveData(number * PROC_MAP_ENTRY_SIZE);
@@ -448,121 +445,39 @@ namespace libdebug
         /// <returns></returns>
         public ulong Call(int pid, ulong rpcstub, ulong address, params object[] args)
         {
+            byte[] arguments = BuildRpcArguments(pid, rpcstub, address, args);
             CheckConnected();
-
-            // need to do this in a custom format
-            CMDPacket packet = new CMDPacket
-            {
-                magic = CMD_PACKET_MAGIC,
-                cmd = (uint) CMDS.CMD_PROC_CALL,
-                datalen = (uint) CMD_PROC_CALL_PACKET_SIZE
-            };
-            SendData(GetBytesFromObject(packet), CMD_PACKET_SIZE);
-
-            MemoryStream rs = new MemoryStream();
-            rs.Write(BitConverter.GetBytes(pid), 0, sizeof(int));
-            rs.Write(BitConverter.GetBytes(rpcstub), 0, sizeof(ulong));
-            rs.Write(BitConverter.GetBytes(address), 0, sizeof(ulong));
-
-            int num = 0;
-            foreach (object arg in args)
-            {
-                byte[] bytes = new byte[8];
-
-                switch (arg)
-                {
-                    case char c:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(c);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(char));
-
-                            byte[] pad = new byte[sizeof(ulong) - sizeof(char)];
-                            Buffer.BlockCopy(pad, 0, bytes, sizeof(char), pad.Length);
-                            break;
-                        }
-                    case byte b:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(b);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(byte));
-
-                            byte[] pad = new byte[sizeof(ulong) - sizeof(byte)];
-                            Buffer.BlockCopy(pad, 0, bytes, sizeof(byte), pad.Length);
-                            break;
-                        }
-                    case short s:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(s);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(short));
-
-                            byte[] pad = new byte[sizeof(ulong) - sizeof(short)];
-                            Buffer.BlockCopy(pad, 0, bytes, sizeof(short), pad.Length);
-                            break;
-                        }
-                    case ushort us:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(us);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(ushort));
-
-                            byte[] pad = new byte[sizeof(ulong) - sizeof(ushort)];
-                            Buffer.BlockCopy(pad, 0, bytes, sizeof(ushort), pad.Length);
-                            break;
-                        }
-                    case int i:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(i);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(int));
-
-                            byte[] pad = new byte[sizeof(ulong) - sizeof(int)];
-                            Buffer.BlockCopy(pad, 0, bytes, sizeof(int), pad.Length);
-                            break;
-                        }
-                    case uint ui:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(ui);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(uint));
-
-                            byte[] pad = new byte[sizeof(ulong) - sizeof(uint)];
-                            Buffer.BlockCopy(pad, 0, bytes, sizeof(uint), pad.Length);
-                            break;
-                        }
-                    case long l:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(l);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(long));
-                            break;
-                        }
-                    case ulong ul:
-                        {
-                            byte[] tmp = BitConverter.GetBytes(ul);
-                            Buffer.BlockCopy(tmp, 0, bytes, 0, sizeof(ulong));
-                            break;
-                        }
-                }
-
-                rs.Write(bytes, 0, bytes.Length);
-                num++;
-            }
-
-            if (num > 6)
-            {
-                throw new Exception("libdbg: too many arguments");
-            }
-
-            if (num < 6)
-            {
-                for (int i = 0; i < (6 - num); i++)
-                {
-                    rs.Write(BitConverter.GetBytes((ulong)0), 0, sizeof(ulong));
-                }
-            }
-
-            SendData(rs.ToArray(), CMD_PROC_CALL_PACKET_SIZE);
-            rs.Dispose();
-
+            SendCMDPacket(CMDS.CMD_PROC_CALL, CMD_PROC_CALL_PACKET_SIZE, arguments);
             CheckStatus();
+            return BitConverter.ToUInt64(ReceiveData(PROC_CALL_SIZE), 4);
+        }
 
-            byte[] data = ReceiveData(PROC_CALL_SIZE);
-            return BitConverter.ToUInt64(data, 4);
+        internal static byte[] BuildRpcArguments(int pid, ulong rpcstub, ulong address, object[] args)
+        {
+            if (args == null) throw new ArgumentNullException(nameof(args));
+            if (args.Length > 6) throw new ArgumentException("RPC accepts at most six integer arguments.", nameof(args));
+            byte[] result = new byte[CMD_PROC_CALL_PACKET_SIZE];
+            BitConverter.GetBytes(pid).CopyTo(result, 0);
+            BitConverter.GetBytes(rpcstub).CopyTo(result, 4);
+            BitConverter.GetBytes(address).CopyTo(result, 12);
+            for (int i = 0; i < args.Length; i++)
+            {
+                ulong value;
+                switch (args[i])
+                {
+                    case char v: value = v; break;
+                    case byte v: value = v; break;
+                    case short v: value = unchecked((ushort)v); break;
+                    case ushort v: value = v; break;
+                    case int v: value = unchecked((uint)v); break;
+                    case uint v: value = v; break;
+                    case long v: value = unchecked((ulong)v); break;
+                    case ulong v: value = v; break;
+                    default: throw new ArgumentException("RPC arguments must be supported integer values.", nameof(args));
+                }
+                BitConverter.GetBytes(value).CopyTo(result, 20 + i * 8);
+            }
+            return result;
         }
 
         /// <summary>

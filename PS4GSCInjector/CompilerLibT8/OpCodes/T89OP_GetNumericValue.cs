@@ -47,11 +47,13 @@ namespace T89CompilerLib.OpCodes
             {
                 case ScriptOperandType.UInt32:
                 case ScriptOperandType.Int32:
-                    try { BitConverter.GetBytes(uint.Parse(Value.ToString().Replace("-", ""))).CopyTo(data, DataAddress); }
-                    catch { BitConverter.GetBytes(int.Parse(Value.ToString())).CopyTo(data, DataAddress); }
+                    long integer = Convert.ToInt64(Value, System.Globalization.CultureInfo.InvariantCulture);
+                    if (integer < int.MinValue || integer > uint.MaxValue)
+                        throw new OverflowException("Integer literal is outside the VM's 32-bit range.");
+                    BitConverter.GetBytes(unchecked((uint)integer)).CopyTo(data, DataAddress);
                     break;
                 case ScriptOperandType.Float:
-                    BitConverter.GetBytes(float.Parse(Value.ToString())).CopyTo(data, DataAddress);
+                    BitConverter.GetBytes(Convert.ToSingle(Value, System.Globalization.CultureInfo.InvariantCulture)).CopyTo(data, DataAddress);
                     break;
                 default:
                     BitConverter.GetBytes(ushort.Parse(Value.ToString().Replace("-", ""))).CopyTo(data, DataAddress);

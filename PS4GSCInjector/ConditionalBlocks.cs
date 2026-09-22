@@ -22,7 +22,7 @@ public sealed class ConditionalBlocks
     {
         CompileTimeTokens.Clear();
         foreach (var token in tokens)
-            CompileTimeTokens.Add(token.ToLower().Trim());
+            CompileTimeTokens.Add(token.ToLowerInvariant().Trim());
     }
 
     private enum RBCBlockState
@@ -48,20 +48,19 @@ public sealed class ConditionalBlocks
         ENDIF
     }
 
-    private enum ConditionState
-    {
-        Matches,
-        DoesntMatch,
-        Else
-    }
-
     private RBCParseState ParseState;
     private RBCBlockState BlockState;
     private Stack<RBCBlockState> PrevConditions = new Stack<RBCBlockState>();
+    private readonly Stack<bool> ElseSeen = new Stack<bool>();
     private char[] InPlace;
 
     public string ParseSource(string input)
     {
+        if (input == null) throw new ArgumentNullException(nameof(input));
+        ParseState = RBCParseState.Ready;
+        BlockState = RBCBlockState.NoCondition;
+        PrevConditions.Clear();
+        ElseSeen.Clear();
         InPlace = input.ToCharArray();
 
         Regex regex = new Regex(@"^(#ifdef|#ifndef|#else|#endif)\b");
@@ -98,8 +97,12 @@ public sealed class ConditionalBlocks
                     }
                     break;
                 case RBCParseState.String:
-                    if (input[SourcePosition] == '"' && (SourcePosition == 0 || input[SourcePosition - 1] != '\\'))
-                        ParseState = RBCParseState.Ready;
+                    if (input[SourcePosition] == '"')
+                    {
+                        int escapes = 0;
+                        for (int i = SourcePosition - 1; i >= 0 && input[i] == '\\'; i--) escapes++;
+                        if (escapes % 2 == 0) ParseState = RBCParseState.Ready;
+                    }
                     break;
                 case RBCParseState.BlockComment:
                     if (input[SourcePosition] == '*' && input.Length > SourcePosition + 1 && input[SourcePosition + 1] == '/')
@@ -131,7 +134,7 @@ public sealed class ConditionalBlocks
         bool isIf = result == RCBBlockType.IFDEF;
 
         if (isTerminator && (PrevConditions.Count < 1 || BlockState == RBCBlockState.NoCondition))
-            throw new CBSyntaxException($"Extraneous {result.ToString().ToLower()}", SourcePosition);
+            throw new CBSyntaxException($"Extraneous {result.ToString().ToLowerInvariant()}", SourcePosition);
 
         ReplaceRange(match.Value.Length);
 
@@ -139,10 +142,17 @@ public sealed class ConditionalBlocks
         {
             if (result == RCBBlockType.ELSE)
             {
+                if (ElseSeen.Pop())
+                    throw new CBSyntaxException("Duplicate #else", SourcePosition);
+                ElseSeen.Push(true);
                 if (IsChainNegated())
                     PrevConditions.Push(RBCBlockState.FailsCondition);
                 else
                     PrevConditions.Push(BlockState == RBCBlockState.MeetsCondition ? RBCBlockState.FailsCondition : RBCBlockState.MeetsCondition);
+            }
+            else
+            {
+                ElseSeen.Pop();
             }
 
             BlockState = PrevConditions.Pop();
@@ -157,6 +167,7 @@ public sealed class ConditionalBlocks
         ReplaceRange(Token.Length);
 
         PrevConditions.Push(BlockState);
+        ElseSeen.Push(false);
 
         if (BlockState == RBCBlockState.FailsCondition)
             return;
@@ -191,7 +202,7 @@ public sealed class ConditionalBlocks
         while (SourcePosition < InPlace.Length && (char.IsLetterOrDigit(InPlace[SourcePosition]) || InPlace[SourcePosition] == '_'))
             tb.Append(InPlace[SourcePosition++]);
 
-        Token = tb.ToString().ToLower();
+        Token = tb.ToString().ToLowerInvariant();
 
         return true;
     }

@@ -52,7 +52,10 @@ namespace T89CompilerLib.OpCodes
             uint JumpTo = After.CommitAddress + After.GetSize();
             uint JumpFrom = CommitAddress + GetSize();
 
-            BitConverter.GetBytes((short)(JumpTo - JumpFrom)).CopyTo(data, GetCommitDataAddress());
+            long distance = (long)JumpTo - JumpFrom;
+            if (distance < short.MinValue || distance > short.MaxValue)
+                throw new InvalidOperationException("A branch exceeds the VM's signed 16-bit jump range. Split this function into smaller functions.");
+            BitConverter.GetBytes((short)distance).CopyTo(data, GetCommitDataAddress());
         }
 
         public override uint GetCommitDataAddress()

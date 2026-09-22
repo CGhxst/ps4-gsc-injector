@@ -39,6 +39,8 @@
   <ItemGroup>
     <Compile Include="ConditionalBlocksTests.cs" />
     <Compile Include="CompilerTests.cs" />
+    <Compile Include="AuditRegressionTests.cs" />
+    <Compile Include="InjectionProtocolTests.cs" />
     <Compile Include="GameProfileTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

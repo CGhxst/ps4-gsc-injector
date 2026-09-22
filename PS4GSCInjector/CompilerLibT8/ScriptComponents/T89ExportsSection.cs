@@ -48,7 +48,7 @@ namespace T89CompilerLib.ScriptComponents
 
         public override ushort Count()
         {
-            return (ushort)ScriptExports.Count;
+            return checked((ushort)ScriptExports.Count);
         }
 
         public IEnumerable<T89ScriptExport> AllExports()
@@ -127,6 +127,8 @@ namespace T89CompilerLib.ScriptComponents
         {
             Header.ExportsCount = Count();
             Header.ExportTableOffset = GetBaseAddress();
+            Header.UNK_20 = GetBaseAddress() + HeaderSize(); // Bytecode offset.
+            Header.UNK_54 = Size() - HeaderSize(); // Bytecode length.
         }
 
         public static void ReadExports(ref byte[] data, uint lpExportsSection, ushort NumExports, T89ScriptObject script, ref T89ExportsSection Exports)
@@ -721,7 +723,7 @@ namespace T89CompilerLib.ScriptComponents
         {
             T89OpCode code = null;
 
-            if (TryCreateBuiltin(identifier.ToLower(), _ref, ref code))
+            if (TryCreateBuiltin(identifier.ToLowerInvariant(), _ref, ref code))
                 return __addop_internal(code);
 
             return null;
@@ -734,7 +736,7 @@ namespace T89CompilerLib.ScriptComponents
         /// <returns></returns>
         public T89OpCode TryAddBuiltInCall(string identifier)
         {
-            if (BuiltinFunctions.TryGetValue(identifier.ToLower(), out ScriptOpCode opcode))
+            if (BuiltinFunctions.TryGetValue(identifier.ToLowerInvariant(), out ScriptOpCode opcode))
                 return __addop_internal(new T89OpCode(opcode));
 
             return null;
@@ -747,7 +749,7 @@ namespace T89CompilerLib.ScriptComponents
         /// <returns></returns>
         public static bool IsBuiltinCall(string identifier)
         {
-            return BuiltinFunctions.ContainsKey(identifier.ToLower());
+            return BuiltinFunctions.ContainsKey(identifier.ToLowerInvariant());
         }
 
         /// <summary>
@@ -757,7 +759,7 @@ namespace T89CompilerLib.ScriptComponents
         /// <returns></returns>
         public static bool IsNotifier(string identifier)
         {
-            return Notifiers.ContainsKey(identifier.ToLower());
+            return Notifiers.ContainsKey(identifier.ToLowerInvariant());
         }
 
         /// <summary>
@@ -1000,7 +1002,7 @@ namespace T89CompilerLib.ScriptComponents
         /// <returns></returns>
         public T89OpCode AddNotification(string notification, byte NumParams)
         {
-            return __addop_internal(new T89OP_Notification(Notifiers[notification.ToLower()], NumParams));
+            return __addop_internal(new T89OP_Notification(Notifiers[notification.ToLowerInvariant()], NumParams));
         }
 
         public override string ToString()

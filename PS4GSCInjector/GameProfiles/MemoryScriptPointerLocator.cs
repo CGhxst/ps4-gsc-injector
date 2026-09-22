@@ -73,7 +73,7 @@ namespace PS4GSCInjector.GameProfiles
 
                 ulong bufferAddress = BitConverter.ToUInt64(memory, index + T8ScriptParseTreeBufferOffset);
                 int size = BitConverter.ToInt32(memory, index + T8ScriptParseTreeSizeOffset);
-                if (bufferAddress == 0 || size <= T8HeaderSize)
+                if (bufferAddress == 0 || size <= T8HeaderSize || size > 16 * 1024 * 1024)
                     continue;
 
                 yield return new T8ScriptParseTreeEntry(
@@ -100,9 +100,7 @@ namespace PS4GSCInjector.GameProfiles
 
             while (offset < entrySize)
             {
-                int readSize = (int)Math.Min((ulong)ReadChunkSize, entrySize - offset);
-                if (offset + (ulong)readSize < entrySize)
-                    readSize += overlap;
+                int readSize = GetReadSize(entrySize - offset, ReadChunkSize, overlap);
 
                 byte[] buffer;
                 var chunkAddress = entry.start + offset;
@@ -125,6 +123,11 @@ namespace PS4GSCInjector.GameProfiles
         private static bool IsReadable(MemoryEntry entry)
         {
             return entry != null && (entry.prot & (uint)PS4DBG.VM_PROTECTIONS.VM_PROT_READ) != 0;
+        }
+
+        internal static int GetReadSize(ulong remaining, int chunkSize, int overlap)
+        {
+            return (int)Math.Min((ulong)checked(chunkSize + overlap), remaining);
         }
 
         private static bool IsWritable(MemoryEntry entry)

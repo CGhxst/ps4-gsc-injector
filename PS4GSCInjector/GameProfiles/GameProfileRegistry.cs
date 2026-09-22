@@ -6,6 +6,7 @@ namespace PS4GSCInjector.GameProfiles
     {
         private static readonly IReadOnlyList<IGscGameProfile> Profiles = new IGscGameProfile[]
         {
+            new Bo2GameProfile(),
             new Bo3GameProfile(),
             new Bo4GameProfile()
         };
